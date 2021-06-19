@@ -1,5 +1,9 @@
 # Workshop Kafka Laboratorio
 
+> Una recomendación es trabajar en Linux y en caso de no tener recursos suficientes, se puede crear una cuenta
+gratis por USD$100 en [Digital Ocean's](https://try.digitalocean.com/freetrialoffer) o en [Linode](https://www.linode.com/lp/free-credit-100) y disfrutar de una máquina virtual Ubuntu de 4 cores
+y 8GBG RAM. Para trabajo local, se puede montar la carpeta de trabajo de la VM usando [SSHFS](https://www.digitalocean.com/community/tutorials/how-to-use-sshfs-to-mount-remote-file-systems-over-ssh).
+
 Para configurar el laboratorio donde se van a desarrollar los ejercicios del workshop,
 se debe configurar un ambiente con los siguientes requerimientos:
 
@@ -122,3 +126,107 @@ $ kubectl create namespace kafka
 $ kubectl create -f 'https://strimzi.io/install/latest?namespace=kafka' -n kafka
 $ kubectl get pod -n kafka --watch
 ```
+
+El comando anterior va a crear el operador de Strimzi escuchando el namespace kafka. Ahora para crear un cluster Kafka, primero, crea un manifiesto de k8s para crear un cluster de kafka básico y guárdalo en ```k8s/kafka.yaml```:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: workshop-lab
+  namespace: kafka
+spec:
+  kafka:
+    version: 2.8.0
+    replicas: 1
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+    config:
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      log.message.format.version: "2.8"
+      inter.broker.protocol.version: "2.8"
+    storage:
+      type: jbod
+      volumes:
+      - id: 0
+        type: persistent-claim
+        size: 1Gi
+        deleteClaim: false
+  zookeeper:
+    replicas: 1
+    storage:
+      type: persistent-claim
+      size: 1Gi
+      deleteClaim: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+```
+
+Ahora instalemos Skaffold para hacer despliegue de yaml de k8s:
+
+```bash
+$ skaffold init --skip-build --kubernetes-manifest="k8s/kafka.yaml"
+```
+
+Finalmente, se debe ejecutar skaffold para desplegar el cluster Kafka:
+
+```bash
+$ skaffold run
+$ kubectl get pod -n kafka --watch
+```
+
+La configuración básica, va a tener un broker y un nodo de zookeeper:
+
+```bash
+$ kubectl -n kafka get all
+```
+
+```csv
+NAME                                                READY   STATUS    RESTARTS   AGE
+pod/strimzi-cluster-operator-6c7b6c4c6-25r9l        1/1     Running   0          3h12m
+pod/workshop-lab-entity-operator-86998bc5d6-z2hlr   3/3     Running   0          7m52s
+pod/workshop-lab-kafka-0                            1/1     Running   0          8m21s
+pod/workshop-lab-zookeeper-0                        1/1     Running   0          9m
+
+NAME                                    TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                               AGE
+service/workshop-lab-kafka-bootstrap    ClusterIP   10.96.208.43    <none>        9091/TCP,9092/TCP,9093/TCP            8m21s
+service/workshop-lab-kafka-brokers      ClusterIP   None            <none>        9090/TCP,9091/TCP,9092/TCP,9093/TCP   8m21s
+service/workshop-lab-zookeeper-client   ClusterIP   10.96.136.185   <none>        2181/TCP                              9m1s
+service/workshop-lab-zookeeper-nodes    ClusterIP   None            <none>        2181/TCP,2888/TCP,3888/TCP            9m1s
+
+NAME                                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/strimzi-cluster-operator       1/1     1            1           3h12m
+deployment.apps/workshop-lab-entity-operator   1/1     1            1           7m52s
+
+NAME                                                      DESIRED   CURRENT   READY   AGE
+replicaset.apps/strimzi-cluster-operator-6c7b6c4c6        1         1         1       3h12m
+replicaset.apps/workshop-lab-entity-operator-86998bc5d6   1         1         1       7m52s
+
+NAME                                      READY   AGE
+statefulset.apps/workshop-lab-kafka       1/1     8m21s
+statefulset.apps/workshop-lab-zookeeper   1/1     9m
+```
+
+Para probar el funcionamiento, puedes iniciar un pod productor:
+
+```bash
+kubectl -n kafka run kafka-producer -ti --image=quay.io/strimzi/kafka:0.23.0-kafka-2.8.0 --rm=true --restart=Never -- bin/kafka-console-producer.sh --broker-list workshop-lab-kafka-bootstrap:9092 --topic my-topic
+```
+
+y luego en un termina diferente un pod consumidor:
+
+```bash
+kubectl -n kafka run kafka-consumer -ti --image=quay.io/strimzi/kafka:0.23.0-kafka-2.8.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server workshop-lab-kafka-bootstrap:9092 --topic my-topic --from-beginning
+```
+
+Ahora puedes escribir mensajes en el productor y ver como el consumidor los recibe.
