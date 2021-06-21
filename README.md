@@ -115,8 +115,8 @@ $ sudo install skaffold /usr/local/bin/
 
 ## Kafka
 
-Kafka es relativsmente complejo de instalar y configurar en forma adecuada. Para simplificar la instalación y
-la adminsitración de Kafka en k8s, vamos a utiliar una distribución de Kafka basada en un operador de k8s
+Kafka es relativamente complejo de instalar y configurar en forma adecuada. Para simplificar la instalación y
+la administración de Kafka en k8s, vamos a utilizar una distribución de Kafka basada en un operador de k8s
 perteneciente a la [Cloud Native Computing Foundation](https://www.cncf.io/), [Strimzi](https://strimzi.io/).
 
 Para instalar strimzi sólo es necesario ejecutar el siguiente comando:
